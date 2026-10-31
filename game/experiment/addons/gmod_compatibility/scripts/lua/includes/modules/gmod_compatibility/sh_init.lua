@@ -242,7 +242,6 @@ gameevent = GameEvents
 sound = Sounds
 debugoverlay = DebugOverlays
 
-Angle = Angles.Create
 Color = Colors.Create
 ClientsideModel = Entities.CreateClientEntity
 Entity = Entities.Find

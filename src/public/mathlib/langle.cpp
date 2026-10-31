@@ -5,6 +5,7 @@
 #include "luasrclib.h"
 #include "lvector.h"
 #include "langle.h"
+#include <stdio.h>
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -322,6 +323,57 @@ LUA_BINDING_BEGIN( Angle, __unm, "class", "Metatable that is called when the ang
 }
 LUA_BINDING_END( "Angle", "The negated angle." )
 
+LUA_REGISTRATION_INIT( AngleGlobals );
+
+//  Global Angle constructor, matching the reference engine's behavior:
+//  Angle( pitch, yaw, roll ) from up to three numbers,
+//  Angle( angle ) as a copy into a new object (never aliased),
+//  Angle( "p y r" ) parsed from exactly three floats,
+//  everything else (boolean, table, vector, nil, mixed junk) silently
+//  produces a zero angle instead of raising an error. Strings that do
+//  not contain exactly three floats fall back to the plain number
+//  conversion of each stack slot (0 when not convertible).
+LUA_BINDING_BEGIN( AngleGlobals, Angle, "library", "Creates a new angle." )
+{
+    const int nArgs = lua_gettop( L );
+    const int firstType = lua_type( L, 1 );
+    lua_QAngle value( 0.0f, 0.0f, 0.0f );
+    bool parsedString = false;
+
+    if ( firstType == LUA_TSTRING )
+    {
+        float pitch, yaw, roll;
+        const char *text = lua_tostring( L, 1 );
+        if ( text && sscanf( text, "%f %f %f", &pitch, &yaw, &roll ) == 3 )
+        {
+            value.Init( pitch, yaw, roll );
+            parsedString = true;
+        }
+    }
+
+    if ( nArgs > 0 && firstType == LUA_TUSERDATA )
+    {
+        lua_QAngle *source = ( lua_QAngle * )luaL_testudata( L, 1, LUA_QANGLEMETANAME );
+        if ( source )
+        {
+            lua_pushangle( L, *source );
+            return 1;
+        }
+    }
+
+    if ( !parsedString && ( firstType == LUA_TNUMBER || firstType == LUA_TSTRING ) )
+    {
+        value.x = ( vec_t )lua_tonumber( L, 1 );
+        value.y = ( vec_t )lua_tonumber( L, 2 );
+        value.z = ( vec_t )lua_tonumber( L, 3 );
+    }
+
+    lua_pushangle( L, value );
+
+    return 1;
+}
+LUA_BINDING_END( "Angle", "The created angle." )
+
 LUA_REGISTRATION_INIT( Angles );
 
 LUA_BINDING_BEGIN( Angles, Create, "library", "Creates a new angle." )
@@ -374,6 +426,15 @@ LUALIB_API int luaopen_QAngle( lua_State *L )
     lua_setfield( L, -2, "__type" ); /* metatable.__type = "Angle" */
 
     LUA_REGISTRATION_COMMIT_LIBRARY( Angles );
+
+    // Publish the Angle global constructor for every lua state, the way the
+    // reference engine does, so scripts do not depend on a Lua-side alias.
+    for ( int i = 0; i < AngleGlobals_luaRegistry.Count(); i++ )
+    {
+        lua_pushcfunction( L, AngleGlobals_luaRegistry[i].function );
+        lua_setglobal( L, AngleGlobals_luaRegistry[i].name );
+    }
+
     lua_pop( L, 1 );  // pop metatable
 
     lua_QAngle v = vec3_angle;
